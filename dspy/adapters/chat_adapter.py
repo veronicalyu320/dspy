@@ -164,6 +164,13 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = format_input_list_field_value(value)
+    # elif field_info.annotation == Image:
+    #     print("field info: ", field_info)
+    #     if not isinstance(value, Image):
+    #         print(f"Coerced image: {value}")
+    #         coerced_image = Image(url=encode_image(value))
+    #     print("post coerce: ", coerced_image)
+    #     string_value = json.dumps(_serialize_for_json(coerced_image), ensure_ascii=False)
     elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
         string_value = json.dumps(_serialize_for_json(value), ensure_ascii=False)
     else:
@@ -171,24 +178,27 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
 
     if assume_text:
         return string_value
-    elif (isinstance(value, Image) or field_info.annotation == Image):
-        # This validation should happen somewhere else
-        # Safe to import PIL here because it's only imported when an image is actually being formatted
-        try:
-            import PIL
-        except ImportError:
-            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-        image_value = value
-        if not isinstance(image_value, Image):
-            if isinstance(image_value, dict) and "url" in image_value:
-                image_value = image_value["url"]
-            elif isinstance(image_value, str):
-                image_value = encode_image(image_value)
-            elif isinstance(image_value, PIL.Image.Image):
-                image_value = encode_image(image_value)
-            assert isinstance(image_value, str)
-            image_value = Image(url=image_value)
-        return {"type": "image_url", "image_url": image_value.model_dump()}
+
+    # What we actually want is that for any image inside of any arbitrary normal python or pudantic object, when we see it 
+    # it will trigger some sort of escape sequence that we then combine at the end in order to make it a cohesive request to send to OAI
+    # Hooking too deep into the serialization process is a bad idea, but we need an escape hatch somewhere
+
+    # elif (isinstance(value, Image) or field_info.annotation == Image):
+    #     # This validation should happen somewhere else
+    #     # Safe to import PIL here because it's only imported when an image is actually being formatted
+    #     try:
+    #         import PIL
+    #     except ImportError:
+    #         raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
+    #     image_value = value
+    #     if not isinstance(image_value, Image):
+    #         if isinstance(image_value, dict) and "url" in image_value:
+    #             image_value = image_value["url"]
+    #         elif isinstance(image_value, str) or isinstance(image_value, PIL.Image.Image):
+    #             image_value = encode_image(image_value)
+    #         assert isinstance(image_value, str)
+    #         image_value = Image(url=image_value)
+    #     return {"type": "image_url", "image_url": image_value.model_dump()}
     else:
         return {"type": "text", "text": string_value}
 
@@ -302,14 +312,26 @@ def format_turn(signature, values, role, incomplete=False):
     flattened_list = list(chain.from_iterable(
         item if isinstance(item, list) else [item] for item in fields_to_collapse
     ))
+    final_list = []
+    while flattened_list:
+        item = flattened_list.pop(0)
+        if re.search(r'"<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"', item.get("text")):
+            image_tag = re.search(r'"<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"', item.get("text")).group(1)
+            # get the prefix and suffix
+            prefix, suffix = item.get("text").split('"<DSPY_IMAGE_START>', 1)[0], "".join(item.get("text").split('<DSPY_IMAGE_END>"', 1)[1:])
+            final_list.append({"type": "text", "text": prefix})
+            final_list.append({"type": "image_url", "image_url": {"url": image_tag}})
+            flattened_list.insert(0, {"type": "text", "text": suffix})
+        else:
+            final_list.append({"type": "text", "text": item.get("text")})
 
-    if all(message.get("type", None) == "text" for message in flattened_list):
-        content = "\n\n".join(message.get("text") for message in flattened_list)
+    if all(message.get("type", None) == "text" for message in final_list):
+        content = "\n\n".join(message.get("text") for message in final_list)
         return {"role": role, "content": content}
 
     # Collapse all consecutive text messages into a single message.
     collapsed_messages = []
-    for item in flattened_list:
+    for item in final_list:
         # First item is always added
         if not collapsed_messages:
             collapsed_messages.append(item)
