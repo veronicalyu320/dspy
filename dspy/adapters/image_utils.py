@@ -41,7 +41,6 @@ class Image(pydantic.BaseModel):
     
     @classmethod
     def from_PIL(cls, pil_image):
-        import PIL
         return cls(url=encode_image(pil_image))
 
     @model_serializer()

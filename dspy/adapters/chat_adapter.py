@@ -15,7 +15,7 @@ from itertools import chain
 from pydantic import TypeAdapter
 from collections.abc import Mapping
 from pydantic.fields import FieldInfo
-from typing import Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
+from typing import Dict, List, Literal, NamedTuple, get_args, get_origin
 
 from dspy.adapters.base import Adapter
 from ..signatures.field import OutputField
