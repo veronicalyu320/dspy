@@ -136,6 +136,9 @@ class Predict(Module, Parameter):
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
         num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
+        logprobs = lm.kwargs.get("logprobs", False)
+        config["logprobs"] = logprobs
+
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
 
@@ -148,8 +151,9 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
+        logprobs = None
         if isinstance(lm, dspy.LM):
-            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+            completions, logprobs = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once("\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
                       f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
@@ -169,7 +173,7 @@ class Predict(Module, Parameter):
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
 
-        return pred
+        return pred, logprobs
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}

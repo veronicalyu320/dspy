@@ -3,7 +3,7 @@ class Adapter:
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
-        outputs = lm(**inputs, **lm_kwargs)
+        outputs, logprobs = lm(**inputs, **lm_kwargs)
         values = []
 
         for output in outputs:
@@ -11,4 +11,4 @@ class Adapter:
             assert set(value.keys()) == set(signature.output_fields.keys()), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
             values.append(value)
         
-        return values
+        return values, logprobs

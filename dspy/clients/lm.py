@@ -43,6 +43,10 @@ class LM:
 
         response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        if kwargs.get("logprobs") == True:
+            logprobs = [c.logprobs for c in response["choices"]]
+        else:
+            logprobs = None
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
@@ -58,7 +62,7 @@ class LM:
         )
         self.history.append(entry)
         
-        return outputs
+        return outputs, logprobs
 
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
